@@ -56,6 +56,14 @@ public class Product {
             final Map<String, Object> json = new Gson().fromJson(r, Map.class);
             final String groupId = (String) json.getOrDefault("groupId", "org.apache.camel.quarkus");
             final String prodGuideUrlTemplate = (String) json.get("guideUrlTemplate");
+
+            // Read platformOverridesSupportAttributeNames first, as it's needed when processing extensions
+            final Set<String> platformOverridesSupportAttributeNames = new LinkedHashSet<>();
+            Optional.ofNullable((String) json.get("platformOverridesSupportAttributeName"))
+                    .ifPresent(platformOverridesSupportAttributeNames::add);
+            ((List<String>) json.getOrDefault("platformOverridesSupportAttributeNames", new ArrayList<>()))
+                    .forEach(platformOverridesSupportAttributeNames::add);
+
             @SuppressWarnings("unchecked")
             final Map<String, Object> extensions = (Map<String, Object>) json.get("extensions");
             final Map<Ga, Product.Extension> extensionsMap = new TreeMap<>();
@@ -66,9 +74,21 @@ public class Product {
                 final String artifactId = en.getKey();
                 final Ga extensionGa = new Ga(groupId, artifactId);
                 Map<String, Object> extensionEntry = (Map<String, Object>) en.getValue();
+
+                // Collect overrides for all configured support attribute names
+                Map<String, List<String>> overrideSupportLevels = new LinkedHashMap<>();
+                for (String attrName : platformOverridesSupportAttributeNames) {
+                    @SuppressWarnings("unchecked")
+                    List<String> override = (List<String>) extensionEntry.get(attrName);
+                    if (override != null && !override.isEmpty()) {
+                        overrideSupportLevels.put(attrName, override);
+                    }
+                }
+
                 extensionsMap.put(extensionGa,
                         new Extension(extensionGa, ModeSupportStatus.valueOf((String) extensionEntry.get("jvm")),
-                                ModeSupportStatus.valueOf((String) extensionEntry.get("native"))));
+                                ModeSupportStatus.valueOf((String) extensionEntry.get("native")),
+                                overrideSupportLevels.isEmpty() ? null : overrideSupportLevels));
 
                 @SuppressWarnings("unchecked")
                 final List<String> allowedMixedTestsList = (List<String>) extensionEntry.get("allowedMixedTests");
@@ -159,12 +179,6 @@ public class Product {
                     .builder();
             ((List<String>) json.getOrDefault("ignoredTransitiveDependencies",
                     Collections.emptyList())).forEach(ignoredTransitiveDependencies::include);
-
-            final Set<String> platformOverridesSupportAttributeNames = new LinkedHashSet<>();
-            Optional.ofNullable((String) json.get("platformOverridesSupportAttributeName"))
-                    .ifPresent(platformOverridesSupportAttributeNames::add);
-            ((List<String>) json.getOrDefault("platformOverridesSupportAttributeNames", new ArrayList<>()))
-                    .forEach(platformOverridesSupportAttributeNames::add);
 
             return new Product(
                     Collections.unmodifiableMap(extensionsMap),
@@ -424,11 +438,18 @@ public class Product {
         private final Ga ga;
         private final ModeSupportStatus jvmSupportStatus;
         private final ModeSupportStatus nativeSupportStatus;
+        private final Map<String, List<String>> overrideSupportLevels;
 
         public Extension(Ga ga, ModeSupportStatus jvmSupportStatus, ModeSupportStatus nativeSupportStatus) {
+            this(ga, jvmSupportStatus, nativeSupportStatus, null);
+        }
+
+        public Extension(Ga ga, ModeSupportStatus jvmSupportStatus, ModeSupportStatus nativeSupportStatus,
+                Map<String, List<String>> overrideSupportLevels) {
             this.ga = ga;
             this.jvmSupportStatus = jvmSupportStatus;
             this.nativeSupportStatus = nativeSupportStatus;
+            this.overrideSupportLevels = overrideSupportLevels;
         }
 
         public boolean hasProductDocumentationPage() {
@@ -440,18 +461,50 @@ public class Product {
         }
 
         /**
-         * @return support level string usable Quarkus Platform metadata, such as
-         *         <code>"redhat-support" : [ "tech-preview" ]</code>
+         * Get support level for a specific attribute name.
+         *
+         * @param  attributeName the attribute name (e.g., "redhat-camel-support", "ibm-support")
+         * @return               support level strings for that attribute
          */
-        public String redhatSupportLevel() {
+        public List<String> getSupportLevel(String attributeName) {
+            // If an explicit override is provided for this attribute in the source JSON, use it directly
+            if (overrideSupportLevels != null && overrideSupportLevels.containsKey(attributeName)) {
+                return overrideSupportLevels.get(attributeName);
+            }
+
+            // Otherwise, derive from jvm/native statuses
+            return deriveSupportLevelFromStatus();
+        }
+
+        /**
+         * @return     support level strings usable in Quarkus Platform metadata, such as
+         *             <code>"redhat-support" : [ "tech-preview" ]</code> or
+         *             <code>"redhat-support" : [ "supported", "deprecated" ]</code>
+         * @deprecated Use {@link #getSupportLevel(String)} to get attribute-specific support levels
+         */
+        @Deprecated
+        public List<String> redhatSupportLevel() {
+            // Return the first override if any, otherwise derive from statuses
+            if (overrideSupportLevels != null && !overrideSupportLevels.isEmpty()) {
+                return overrideSupportLevels.values().iterator().next();
+            }
+            return deriveSupportLevelFromStatus();
+        }
+
+        private List<String> deriveSupportLevelFromStatus() {
             if (nativeSupportStatus == jvmSupportStatus) {
-                return nativeSupportStatus.quarkusSupportLevel;
+                // Both modes have the same status
+                if (nativeSupportStatus.quarkusSupportLevel == null) {
+                    return Collections.emptyList();
+                }
+                return Collections.singletonList(nativeSupportStatus.quarkusSupportLevel);
             }
             if (jvmSupportStatus == ModeSupportStatus.supported && nativeSupportStatus == ModeSupportStatus.techPreview) {
-                return "supported-in-jvm";
+                // Special case: supported in JVM, tech preview in native
+                return Collections.singletonList("supported-in-jvm");
             }
-            throw new IllegalStateException(
-                    "Cannot merge native support level " + nativeSupportStatus + " with JVM supportlevel " + jvmSupportStatus);
+            throw new IllegalStateException("Unexpected combination of jvm=" + jvmSupportStatus + " and native="
+                    + nativeSupportStatus + " for " + ga + ". Use explicit override in product source JSON.");
         }
 
     }

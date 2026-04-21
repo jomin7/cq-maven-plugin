@@ -1,0 +1,52 @@
+{
+    "extensions": {
+        "camel-quarkus-bean": {
+            "jvm": "supported",
+            "native": "supported",
+            "comment": "both supported - should derive to single ['supported']"
+        },
+        "camel-quarkus-avro": {
+            "jvm": "supported",
+            "native": "techPreview",
+            "comment": "supported/techPreview - should derive to ['supported-in-jvm']"
+        },
+        "camel-quarkus-direct": {
+            "jvm": "supported",
+            "native": "deprecated",
+            "redhat-support": [
+                "supported",
+                "deprecated"
+            ],
+            "comment": "different statuses - requires explicit override"
+        },
+        "camel-quarkus-splunk": {
+            "jvm": "deprecated",
+            "native": "deprecated",
+            "redhat-support": [
+                "supported",
+                "deprecated"
+            ],
+            "comment": "explicit override - should use ['supported', 'deprecated'] not derived ['deprecated']"
+        },
+        "camel-quarkus-community": {
+            "jvm": "community",
+            "native": "community",
+            "comment": "community - should not appear in output (empty support levels)"
+        }
+    },
+    "excludeTests": [],
+    "additionalProductizedArtifacts": [
+        "camel-quarkus-catalog"
+    ],
+    "guideUrlTemplate": "https://access.redhat.com/documentation/en-us/red_hat_integration/${cqMajorVersion}.latest/html/camel_extensions_for_quarkus_reference/extensions-${artifactIdBase}",
+    "integrationTests": [
+        {
+            "basedir": ".",
+            "includes": [
+                "integration-tests/*/pom.xml"
+            ],
+            "excludes": []
+        }
+    ],
+    "platformOverridesSupportAttributeNames": ["redhat-support"]
+}

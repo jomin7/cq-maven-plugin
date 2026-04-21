@@ -81,4 +81,31 @@ public class ProdExcludesMojoTest {
         TestUtils.assertTreesMatch(Paths.get("src/test/expected/" + testName), mojo.basedir.toPath());
     }
 
+    @Test
+    void platformOverrides() throws MojoExecutionException, MojoFailureException, IOException {
+        final String testName = "platform-overrides-test";
+        final Path projectDir = TestUtils.createProjectFromTemplate("prod-excludes", testName);
+        final Path basePath = projectDir.toAbsolutePath().normalize();
+
+        final Path productJsonPath = basePath.resolve("product/src/main/resources/camel-quarkus-product-source.json");
+        try (InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("camel-quarkus-product-source-platform-overrides.json")) {
+            Files.copy(in, productJsonPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // Run platform-overrides mojo
+        final PlatformOverridesMojo platformMojo = new PlatformOverridesMojo();
+        platformMojo.basedir = basePath.toFile();
+        platformMojo.encoding = "utf-8";
+        platformMojo.documentedProductVersion = "3.8";
+        platformMojo.productJson = productJsonPath.toFile();
+        platformMojo.overrideGuide = true;
+        platformMojo.execute();
+
+        // Compare generated file with expected
+        final Path generatedDir = basePath.resolve("product/src/main/generated");
+        TestUtils.assertTreesMatch(Paths.get("src/test/expected/platform-overrides/product/src/main/generated"),
+                generatedDir);
+    }
+
 }

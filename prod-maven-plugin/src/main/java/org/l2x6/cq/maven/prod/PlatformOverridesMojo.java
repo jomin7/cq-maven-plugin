@@ -25,10 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -138,8 +138,18 @@ public class PlatformOverridesMojo extends AbstractMojo {
         List<Map<String, Object>> extensions = new ArrayList<>();
         model.put("extensions", extensions);
         for (Extension ext : product.getProductExtensions().values()) {
-            final String redhatSupportLevel = ext.redhatSupportLevel();
-            if (redhatSupportLevel != null) {
+            // Collect support levels for each configured attribute name
+            final Map<String, List<String>> supportLevelsByAttribute = new LinkedHashMap<>();
+            boolean hasAnySupport = false;
+            for (String attributeName : product.getPlatformOverridesSupportAttributeNames()) {
+                List<String> levels = ext.getSupportLevel(attributeName);
+                if (!levels.isEmpty()) {
+                    supportLevelsByAttribute.put(attributeName, levels);
+                    hasAnySupport = true;
+                }
+            }
+
+            if (hasAnySupport) {
                 final Map<String, Object> extModel = new LinkedHashMap<>();
 
                 final Ga ga = ext.getGa();
@@ -147,15 +157,19 @@ public class PlatformOverridesMojo extends AbstractMojo {
                 extModel.put("artifact-id", ga.getArtifactId());
 
                 final Map<String, Object> md = new LinkedHashMap<>();
-                for (String key : product.getPlatformOverridesSupportAttributeNames()) {
-                    md.put(key, Arrays.asList(redhatSupportLevel));
+                // Put each attribute's specific support levels
+                for (Entry<String, List<String>> entry : supportLevelsByAttribute.entrySet()) {
+                    md.put(entry.getKey(), entry.getValue());
                 }
 
                 if (overrideGuide) {
                     md.put("guide", product.getExtensionDocPageUrl(ga));
                 }
 
-                if (redhatSupportLevel.equals("supported-in-jvm")) {
+                // Check if any attribute contains "supported-in-jvm"
+                boolean hasSupportedInJvm = supportLevelsByAttribute.values().stream()
+                        .anyMatch(levels -> levels.contains("supported-in-jvm"));
+                if (hasSupportedInJvm) {
                     md.put("unlisted", "false");
                 }
 
