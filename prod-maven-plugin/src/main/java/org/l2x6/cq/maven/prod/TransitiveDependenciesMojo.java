@@ -80,16 +80,6 @@ import org.w3c.dom.Document;
 public class TransitiveDependenciesMojo {
 
     /**
-     * Artifact-specific version property mappings.
-     * Maps from artifactId to the version property that should be used.
-     * This allows specific artifacts to use custom version properties instead of the default edition-based versions.
-     */
-    private static final Map<String, String> ARTIFACT_VERSION_OVERRIDES = new HashMap<>();
-    static {
-        ARTIFACT_VERSION_OVERRIDES.put("camel-launcher", "${camel.launcher.version}");
-    }
-
-    /**
      * The version of the current source tree
      *
      * @since 2.17.0
@@ -386,8 +376,11 @@ public class TransitiveDependenciesMojo {
                             .filter(gavtcs -> gavtcs.getGroupId().equals("org.apache.camel"))
                             .forEach(gavtcs -> {
                                 final Ga ga = new Ga(gavtcs.getGroupId(), gavtcs.getArtifactId());
-                                // Check for artifact-specific version override first
-                                final String expectedVersion = ARTIFACT_VERSION_OVERRIDES.getOrDefault(
+                                // Check for artifact-specific version override from product JSON first
+                                final Map<String, String> overrides = product != null
+                                        ? product.getArtifactVersionOverrides()
+                                        : Collections.emptyMap();
+                                final String expectedVersion = overrides.getOrDefault(
                                         gavtcs.getArtifactId(),
                                         prodCamelGas.contains(ga)
                                                 ? CamelEdition.PRODUCT.getVersionExpression()
